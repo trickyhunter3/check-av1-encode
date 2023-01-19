@@ -1,24 +1,37 @@
-use std::{process::Command, fs::File, io::Write, env};
+use std::{process::Command, fs::{File, self}, io::Write, env};
+
+use serde_json::Value;
 
 //constants
-const AV1AN_LOCATION: &str = r"E:\Encoding\av1an.exe";
-const AV1AN_ADDITIONAL_SETTINGS: &str = r"";
-const SSIMULACRA2_LOCATION_INSIDE_ARCH: &str = r"/home/denisplay/ssimulacra2_bin/target/release/ssimulacra2_rs";
-const ARCH_WSL_LOCATION: &str = r"C:\arch\Arch.exe";
-const WORKER_NUM: &str = "2";
+const WORKER_NUM: &str = "4";
 const QUIN_NUM: &str = "255";
 
 fn main() {
-    let input_file = r"E:\a_Projects\AN\Ever\Season 1\720p_15s.mp4".to_string();
-    let output_file = r"E:\a_Projects\AN\Ever\Season 1\out.mkv".to_string();
+    let json_paths = match get_json(){
+        Ok(ok) => ok,
+        Err(err) =>{
+            println!("Err: {}", err);
+            println!("Please transfer/create a file named \"paths.json\"");
+            let mut line = "".to_string();
+            std::io::stdin().read_line(&mut line).unwrap();
+            return;
+        }
+    };
+    let av1an_path = json_paths[0].clone();
+    let ssim2_path = json_paths[1].clone();
+    let arch_path = json_paths[2].clone();
+
+    let input_file = r"C:\Encode\720p_15s.mp4".to_string();
+    let output_file = r"C:\Encode\out.mp4".to_string();
     let crf = "10".to_string();
-    //let _a = encode_clip(input_file, output_file, crf);
-    let _b = ssim2_clip(input_file, output_file);
+    let _a = encode_clip(input_file.clone(), output_file.clone(), crf, av1an_path);
+    let _b = ssim2_clip(input_file, output_file, arch_path, ssim2_path);
 }
 
-fn encode_clip(clip_file: String, output_name: String, crf: String) -> Result<i32, String>{
-    //start encoding a clip with crf given and additional settings
-
+fn encode_clip(clip_file: String, output_name: String, crf: String, av1an_path: String) -> Result<i32, String>{
+    //
+    //  start encoding a clip with crf given and additional settings
+    //
     let av1an_settings: String = format!("%1 -i \"{}\" -y --verbose --keep --resume --split-method av-scenechange -m lsmash -c mkvmerge --photon-noise 2 --chroma-noise -e rav1e --force -v \"--speed {} --threads 2 --tiles 2 --quantizer {}\" --pix-format yuv420p10le -w {} -x 240 -o \"{}\""
     ,clip_file, crf, QUIN_NUM, WORKER_NUM, output_name);
     let file_name = "av1an_encode_settings.bat".to_string();
@@ -31,7 +44,7 @@ fn encode_clip(clip_file: String, output_name: String, crf: String) -> Result<i3
         }
     };
     //try start encoding
-    let av1an_child_proccess = match Command::new("cmd").args(["/C", &file_name, AV1AN_LOCATION]).spawn(){
+    let av1an_child_proccess = match Command::new("cmd").args(["/C", &file_name, &av1an_path]).spawn(){
         Ok(out) => out,
         Err(err) => {
             //send clip file that errored and the error, as Err
@@ -56,7 +69,7 @@ fn encode_clip(clip_file: String, output_name: String, crf: String) -> Result<i3
     return Ok(0);
 }
 
-fn ssim2_clip(original_clip_file: String, encoded_clip_file: String) -> Result<Vec<i32>, String>{
+fn ssim2_clip(original_clip_file: String, encoded_clip_file: String, arch_path: String, ssim2_path: String) -> Result<Vec<i32>, String>{
     //run ssmi2 with arch wsl
     //return 95th percentile and 5th percentile if succeeded
     let results_vec: Vec<i32> = Vec::new();
@@ -73,7 +86,7 @@ fn ssim2_clip(original_clip_file: String, encoded_clip_file: String) -> Result<V
     let output_save_location: String = current_dir.to_string_lossy().to_string() + "\\" + &save_file_name;
 
     let ssmi2_settings = format!("%1 runp {} video -f {} \"{}\" \"{}\" > {}",
-        SSIMULACRA2_LOCATION_INSIDE_ARCH, WORKER_NUM, original_clip_file, encoded_clip_file, output_save_location);
+        ssim2_path, WORKER_NUM, original_clip_file, encoded_clip_file, output_save_location);
 
     let file_name = "ssmi2_encode_settings.bat".to_string();
     match create_file_encoding_settings(ssmi2_settings, file_name.clone()){
@@ -85,7 +98,7 @@ fn ssim2_clip(original_clip_file: String, encoded_clip_file: String) -> Result<V
     };
 
     //try start ssim2 and 
-    let ssim2_child_proccess = match Command::new("cmd").args(["/C", &file_name, ARCH_WSL_LOCATION]).spawn(){
+    let ssim2_child_proccess = match Command::new("cmd").args(["/C", &file_name, &arch_path]).spawn(){
         Ok(out) => out,
         Err(err) => {
             //send clip file that errored and the error, as Err
@@ -111,7 +124,10 @@ fn ssim2_clip(original_clip_file: String, encoded_clip_file: String) -> Result<V
 }
 
 fn create_file_encoding_settings(settings: String, file_name: String) -> Result<String, i32>{
-    //writes a file to encode with
+    //
+    //  writes a batch file to encode with later
+    //  this is becuase procces in rust use string leterals or something :(
+    // 
     let mut file = match File::create(file_name) {
         Ok(ok) => ok,
         Err(_err) => return Err(3)
@@ -123,3 +139,51 @@ fn create_file_encoding_settings(settings: String, file_name: String) -> Result<
     
 }
 
+fn get_json() -> Result<Vec<String>, String> {
+    //
+    //  get paths for programs with json
+    //
+    let mut final_vec: Vec<String> = Vec::new();
+    let json_file_string = match fs::read_to_string("paths.json") {
+        Ok(string) => string,
+        Err(_err) => {
+            let error_messege = "Cannot Open json file \"paths.json\"".to_string();
+            return Err(error_messege);
+        }
+    };
+    //whole json
+    let json_values: Value = match serde_json::from_str(&json_file_string) {
+        Ok(value) => value,
+        Err(_err) => {
+            let error_messege = "\"paths.json\" fromatted incorectly".to_string();
+            return Err(error_messege);
+        }
+    };
+
+    //paths inside json
+    let av1an_path_value = match json_values["av1an"].as_str() {
+        Some(str) => str.to_string(),
+        None => {
+            let error_messege = "\"Value_Names\" was not found inside \"paths.json\"".to_string();
+            return Err(error_messege);
+        }
+    };
+    let ssim2_path_value = match json_values["ssim2"].as_str() {
+        Some(str) => str.to_string(),
+        None => {
+            let error_messege = "\"Value_Names\" was not found inside \"paths.json\"".to_string();
+            return Err(error_messege);
+        }
+    };
+    let arch_path_value = match json_values["arch"].as_str() {
+        Some(str) => str.to_string(),
+        None => {
+            let error_messege = "\"Value_Names\" was not found inside \"paths.json\"".to_string();
+            return Err(error_messege);
+        }
+    };
+    final_vec.push(av1an_path_value);
+    final_vec.push(ssim2_path_value);
+    final_vec.push(arch_path_value);
+    return Ok(final_vec);
+}

@@ -1,0 +1,1 @@
+%1 runp /home/denisplay/ssimulacra2_bin/target/release/ssimulacra2_rs video -f 2 "E:\a_Projects\AN\Ever\Season 1\720p_15s.mp4" "E:\a_Projects\AN\Ever\Season 1\out.mkv" > E:\a_Projects\rust\check-av1-encode\ssim2_output.txt

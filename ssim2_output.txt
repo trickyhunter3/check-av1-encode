@@ -1,0 +1,6 @@
+Video Score for 360 frames
+Mean: -43.21496308
+Median: -46.76070107
+Std Dev: 23.12122237
+5th Percentile: -67.20236979
+95th Percentile: -13.42053559

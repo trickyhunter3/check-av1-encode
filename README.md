@@ -5,5 +5,5 @@ please put paths.json inside the release folder
 
 ## Requirements:
 arch wsl with: ssmi2 , ffmpeg, ffprobe
-av1an
 
+av1an

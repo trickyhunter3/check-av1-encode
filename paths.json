@@ -1,5 +1,7 @@
 {
     "av1an": "C:\\Encode\\av1an.exe",
     "ssim2": "/home/denisplay/ssimulacra2_bin/target/release/ssimulacra2_rs",
-    "arch": "Arch.exe"
+    "arch": "Arch.exe",
+    "ffmpeg": "ffmpeg.exe",
+    "ffprobe": "ffprobe.exe"
 }

@@ -11,7 +11,6 @@ fn main() {
         Ok(ok) => ok,
         Err(err) =>{
             println!("Err: {}", err);
-            println!("Please transfer/create a file named \"paths.json\"");
             let mut line = "".to_string();
             std::io::stdin().read_line(&mut line).unwrap();
             return;
@@ -20,12 +19,15 @@ fn main() {
     let av1an_path = json_paths[0].to_string();
     let ssim2_path = json_paths[1].to_string();
     let arch_path = json_paths[2].to_string();
+    let ffmpeg_path = json_paths[3].to_string();
+    let ffprobe_path = json_paths[4].to_string();   
 
-    let input_file = r"C:\Encode\720p_15s.mp4".to_string();
+    let input_file = r"C:\Encode\720p 15s.mp4".to_string();
     let output_file = r"C:\Encode\out.mp4".to_string();
     let crf = "10".to_string();
-    let _a = encode_clip(input_file.clone(), output_file.clone(), crf, av1an_path);
-    let _b = ssim2_clip(input_file, output_file, arch_path, ssim2_path);
+    //let _a = encode_clip(input_file.clone(), output_file.clone(), crf, av1an_path);
+    //let _b = ssim2_clip(input_file, output_file, arch_path, ssim2_path);
+    let _c = extract_clips(input_file, "1".to_string(), "5".to_string(), ffmpeg_path, ffprobe_path);
 }
 
 fn encode_clip(clip_path: String, output_path: String, crf: String, av1an_path: String) -> Result<i32, String>{
@@ -147,7 +149,7 @@ fn get_json() -> Result<Vec<String>, String>{
     let json_file_string = match fs::read_to_string("paths.json") {
         Ok(string) => string,
         Err(_err) => {
-            let error_messege = "Cannot Open json file \"paths.json\"".to_string();
+            let error_messege = "Cannot Open/find json file \"paths.json\"".to_string();
             return Err(error_messege);
         }
     };
@@ -164,31 +166,47 @@ fn get_json() -> Result<Vec<String>, String>{
     let av1an_path_value = match json_values["av1an"].as_str() {
         Some(str) => str.to_string(),
         None => {
-            let error_messege = "\"Value_Names\" was not found inside \"paths.json\"".to_string();
+            let error_messege = "\"av1an\" was not found inside \"paths.json\"".to_string();
             return Err(error_messege);
         }
     };
     let ssim2_path_value = match json_values["ssim2"].as_str() {
         Some(str) => str.to_string(),
         None => {
-            let error_messege = "\"Value_Names\" was not found inside \"paths.json\"".to_string();
+            let error_messege = "\"ssim2\" was not found inside \"paths.json\"".to_string();
             return Err(error_messege);
         }
     };
     let arch_path_value = match json_values["arch"].as_str() {
         Some(str) => str.to_string(),
         None => {
-            let error_messege = "\"Value_Names\" was not found inside \"paths.json\"".to_string();
+            let error_messege = "\"arch\" was not found inside \"paths.json\"".to_string();
+            return Err(error_messege);
+        }
+    };
+    let ffmpeg_path_value = match json_values["ffmpeg"].as_str() {
+        Some(str) => str.to_string(),
+        None => {
+            let error_messege = "\"ffmpeg\" was not found inside \"paths.json\"".to_string();
+            return Err(error_messege);
+        }
+    };
+    let ffprobe_path_value = match json_values["ffprobe"].as_str() {
+        Some(str) => str.to_string(),
+        None => {
+            let error_messege = "\"ffprobe\" was not found inside \"paths.json\"".to_string();
             return Err(error_messege);
         }
     };
     final_vec.push(av1an_path_value);
     final_vec.push(ssim2_path_value);
     final_vec.push(arch_path_value);
+    final_vec.push(ffmpeg_path_value);
+    final_vec.push(ffprobe_path_value);
     return Ok(final_vec);
 }
 
-fn extract_clips(full_video: String, clip_length: String, interval: String) -> Vec<String>{
+fn extract_clips(full_video: String, clip_length: String, interval: String, ffmpeg_path: String, ffprobe_path: String) -> Result<Vec<String>, String>{
     //
     //  first get the video length using ffprobe
     //  then in a for loop extract each clip using the clip_length and the interval
@@ -196,5 +214,40 @@ fn extract_clips(full_video: String, clip_length: String, interval: String) -> V
     //
     let mut final_vec: Vec<String> = Vec::new();
 
-    return final_vec;
+    //ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 "/mnt/c/Encode/720p_15s.mp4"
+    let ffprobe_settings = format!("%1 -v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 \"{}\" > ffprobe_output.txt",
+        full_video);
+    let file_name = "ffprobe_settings.bat".to_string();
+    //try to create a file to encode with
+    match create_file_encoding_settings(ffprobe_settings.clone(), file_name.clone()){
+        Ok(ok) => ok,
+        Err(_err) => {
+            let error_messege = "Cannot Create File".to_string();
+            return Err(error_messege);
+        }
+    };
+
+    let ffprobe_child_proccess = match Command::new("cmd").args(["/C", &file_name, &ffprobe_path]).spawn(){
+        Ok(out) => out,
+        Err(err) => {
+            //send clip file that errored and the error, as Err
+            let error_messege = "Cannot probe file: ".to_string() + &full_video + "\nError: " + &err.to_string();
+            return Err(error_messege);
+        }
+    };
+
+    //waiting for procces to finish
+    let ffprobe_output = match ffprobe_child_proccess.wait_with_output() {
+        Ok(ok) => ok,
+        Err(err) => {
+            //send clip file that errored and the error, as Err
+            let error_messege = "While waiting for file: ".to_string() + &full_video + "To probe it errored\nError: " + &err.to_string();
+            return Err(error_messege);
+        }
+    };
+    //read the result that was saved to a file
+    let contents = fs::read_to_string(file_name).expect("Should have been able to read ffprobe_output.txt");
+    let video_length: i32 = contents.parse().unwrap();
+
+    return Ok(final_vec);
 }

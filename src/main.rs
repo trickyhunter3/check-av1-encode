@@ -17,9 +17,9 @@ fn main() {
             return;
         }
     };
-    let av1an_path = json_paths[0].clone();
-    let ssim2_path = json_paths[1].clone();
-    let arch_path = json_paths[2].clone();
+    let av1an_path = json_paths[0].to_string();
+    let ssim2_path = json_paths[1].to_string();
+    let arch_path = json_paths[2].to_string();
 
     let input_file = r"C:\Encode\720p_15s.mp4".to_string();
     let output_file = r"C:\Encode\out.mp4".to_string();
@@ -28,12 +28,12 @@ fn main() {
     let _b = ssim2_clip(input_file, output_file, arch_path, ssim2_path);
 }
 
-fn encode_clip(clip_file: String, output_name: String, crf: String, av1an_path: String) -> Result<i32, String>{
+fn encode_clip(clip_path: String, output_path: String, crf: String, av1an_path: String) -> Result<i32, String>{
     //
     //  start encoding a clip with crf given and additional settings
     //
     let av1an_settings: String = format!("%1 -i \"{}\" -y --verbose --keep --resume --split-method av-scenechange -m lsmash -c mkvmerge --photon-noise 2 --chroma-noise -e rav1e --force -v \"--speed {} --threads 2 --tiles 2 --quantizer {}\" --pix-format yuv420p10le -w {} -x 240 -o \"{}\""
-    ,clip_file, crf, QUIN_NUM, WORKER_NUM, output_name);
+    ,clip_path, crf, QUIN_NUM, WORKER_NUM, output_path);
     let file_name = "av1an_encode_settings.bat".to_string();
     //try to create a file to encode with
     match create_file_encoding_settings(av1an_settings.clone(), file_name.clone()){
@@ -48,7 +48,7 @@ fn encode_clip(clip_file: String, output_name: String, crf: String, av1an_path: 
         Ok(out) => out,
         Err(err) => {
             //send clip file that errored and the error, as Err
-            let error_messege = "Cannot start encoding file: ".to_string() + &clip_file + "\nError: " + &err.to_string();
+            let error_messege = "Cannot start encoding file: ".to_string() + &clip_path + "\nError: " + &err.to_string();
             return Err(error_messege);
         }
     };
@@ -58,18 +58,18 @@ fn encode_clip(clip_file: String, output_name: String, crf: String, av1an_path: 
         Ok(ok) => ok,
         Err(err) => {
             //send clip file that errored and the error, as Err
-            let error_messege = "While waiting for file: ".to_string() + &clip_file + "To encode it errored\nError: " + &err.to_string();
+            let error_messege = "While waiting for file: ".to_string() + &clip_path + "To encode it errored\nError: " + &err.to_string();
             return Err(error_messege);
         }
     };
 
     if av1an_output.status.success(){
-        println!("Encoded successfully clip: {}", clip_file);
+        println!("successfully Encoded clip: {}", clip_path);
     }
     return Ok(0);
 }
 
-fn ssim2_clip(original_clip_file: String, encoded_clip_file: String, arch_path: String, ssim2_path: String) -> Result<Vec<i32>, String>{
+fn ssim2_clip(original_clip_path: String, encoded_clip_path: String, arch_path: String, ssim2_path: String) -> Result<Vec<i32>, String>{
     //run ssmi2 with arch wsl
     //return 95th percentile and 5th percentile if succeeded
     let results_vec: Vec<i32> = Vec::new();
@@ -86,7 +86,7 @@ fn ssim2_clip(original_clip_file: String, encoded_clip_file: String, arch_path: 
     let output_save_location: String = current_dir.to_string_lossy().to_string() + "\\" + &save_file_name;
 
     let ssmi2_settings = format!("%1 runp {} video -f {} \"{}\" \"{}\" > {}",
-        ssim2_path, WORKER_NUM, original_clip_file, encoded_clip_file, output_save_location);
+        ssim2_path, WORKER_NUM, original_clip_path, encoded_clip_path, output_save_location);
 
     let file_name = "ssmi2_encode_settings.bat".to_string();
     match create_file_encoding_settings(ssmi2_settings, file_name.clone()){
@@ -102,7 +102,7 @@ fn ssim2_clip(original_clip_file: String, encoded_clip_file: String, arch_path: 
         Ok(out) => out,
         Err(err) => {
             //send clip file that errored and the error, as Err
-            let error_messege = "Cannot start ssmi2 file: ".to_string() + &encoded_clip_file + "\nError: " + &err.to_string();
+            let error_messege = "Cannot start ssmi2 file: ".to_string() + &encoded_clip_path + "\nError: " + &err.to_string();
             return Err(error_messege);
         }
     };
@@ -112,13 +112,13 @@ fn ssim2_clip(original_clip_file: String, encoded_clip_file: String, arch_path: 
         Ok(ok) => ok,
         Err(err) => {
             //send clip file that errored and the error, as Err
-            let error_messege = "While waiting for file: ".to_string() + &encoded_clip_file + "To ssim2 it errored\nError: " + &err.to_string();
+            let error_messege = "While waiting for file: ".to_string() + &encoded_clip_path + "To ssim2 it errored\nError: " + &err.to_string();
             return Err(error_messege);
         }
     };
 
     if ssim2_output.status.success(){
-        println!("ssmi2 successfully clip: {}", encoded_clip_file);
+        println!("ssmi2 successfully clip: {}", encoded_clip_path);
     }
     return Ok(results_vec);
 }
@@ -139,7 +139,7 @@ fn create_file_encoding_settings(settings: String, file_name: String) -> Result<
     
 }
 
-fn get_json() -> Result<Vec<String>, String> {
+fn get_json() -> Result<Vec<String>, String>{
     //
     //  get paths for programs with json
     //
@@ -186,4 +186,15 @@ fn get_json() -> Result<Vec<String>, String> {
     final_vec.push(ssim2_path_value);
     final_vec.push(arch_path_value);
     return Ok(final_vec);
+}
+
+fn extract_clips(full_video: String, clip_length: String, interval: String) -> Vec<String>{
+    //
+    //  first get the video length using ffprobe
+    //  then in a for loop extract each clip using the clip_length and the interval
+    //  last return all the clip names in a vec
+    //
+    let mut final_vec: Vec<String> = Vec::new();
+
+    return final_vec;
 }

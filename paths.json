@@ -1,7 +1,8 @@
 {
-    "av1an": "C:\\Encode\\av1an.exe",
+    "av1an": "av1an.exe",
     "ssim2": "/home/denisplay/ssimulacra2_bin/target/release/ssimulacra2_rs",
     "arch": "Arch.exe",
     "ffmpeg": "ffmpeg.exe",
-    "ffprobe": "ffprobe.exe"
+    "ffprobe": "ffprobe.exe",
+    "encoding_settings": "%1 -i INPUT -y --verbose --keep --resume --split-method av-scenechange -m lsmash -c mkvmerge --photon-noise 2 --chroma-noise -e rav1e --force -v \"--speed SPEED --threads 2 --tiles 2 --quantizer 60\" --pix-format yuv420p10le -w WORKER_NUM -x 240 -o OUTPUT"
 }

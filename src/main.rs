@@ -1,5 +1,4 @@
 use std::{process::Command, fs::{File, self}, io::Write, env};
-
 use serde_json::Value;
 
 //constants
@@ -22,12 +21,13 @@ fn main() {
     let ffmpeg_path = json_paths[3].to_string();
     let ffprobe_path = json_paths[4].to_string();   
 
-    let input_file = r"C:\Encode\720p 15s.mp4".to_string();
-    let output_file = r"C:\Encode\out.mp4".to_string();
+    let input_file = r"E:\Encoding\720p_15s.mp4".to_string();
+    let output_file = r"E:\Encoding\out".to_string();
     let crf = "10".to_string();
     //let _a = encode_clip(input_file.clone(), output_file.clone(), crf, av1an_path);
     //let _b = ssim2_clip(input_file, output_file, arch_path, ssim2_path);
-    let _c = extract_clips(input_file, "1".to_string(), "5".to_string(), ffmpeg_path, ffprobe_path);
+    let _c = extract_clips(input_file, 3, 2, ffmpeg_path, ffprobe_path).unwrap();
+    print!("{:?}", _c);
 }
 
 fn encode_clip(clip_path: String, output_path: String, crf: String, av1an_path: String) -> Result<i32, String>{
@@ -206,7 +206,7 @@ fn get_json() -> Result<Vec<String>, String>{
     return Ok(final_vec);
 }
 
-fn extract_clips(full_video: String, clip_length: String, interval: String, ffmpeg_path: String, ffprobe_path: String) -> Result<Vec<String>, String>{
+fn extract_clips(full_video: String, clip_length: i32, interval: i32, ffmpeg_path: String, ffprobe_path: String) -> Result<Vec<String>, String>{
     //
     //  first get the video length using ffprobe
     //  then in a for loop extract each clip using the clip_length and the interval
@@ -214,12 +214,15 @@ fn extract_clips(full_video: String, clip_length: String, interval: String, ffmp
     //
     let mut final_vec: Vec<String> = Vec::new();
 
+    let file_name_ffprobe = "ffprobe_settings.bat".to_string();
+    let file_name_ffmpeg = "ffmpeg_settings.bat".to_string();
+    let file_name_ffprobe_output = "ffprobe_output.txt";
     //ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 "/mnt/c/Encode/720p_15s.mp4"
-    let ffprobe_settings = format!("%1 -v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 \"{}\" > ffprobe_output.txt",
-        full_video);
-    let file_name = "ffprobe_settings.bat".to_string();
+    let ffprobe_settings = format!("%1 -v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 \"{}\" > {}",
+        full_video, file_name_ffprobe_output);
+    
     //try to create a file to encode with
-    match create_file_encoding_settings(ffprobe_settings.clone(), file_name.clone()){
+    match create_file_encoding_settings(ffprobe_settings.clone(), file_name_ffprobe.clone()){
         Ok(ok) => ok,
         Err(_err) => {
             let error_messege = "Cannot Create File".to_string();
@@ -227,7 +230,7 @@ fn extract_clips(full_video: String, clip_length: String, interval: String, ffmp
         }
     };
 
-    let ffprobe_child_proccess = match Command::new("cmd").args(["/C", &file_name, &ffprobe_path]).spawn(){
+    let ffprobe_child_proccess = match Command::new("cmd").args(["/C", &file_name_ffprobe, &ffprobe_path]).spawn(){
         Ok(out) => out,
         Err(err) => {
             //send clip file that errored and the error, as Err
@@ -237,7 +240,7 @@ fn extract_clips(full_video: String, clip_length: String, interval: String, ffmp
     };
 
     //waiting for procces to finish
-    let ffprobe_output = match ffprobe_child_proccess.wait_with_output() {
+    let _ffprobe_output = match ffprobe_child_proccess.wait_with_output() {
         Ok(ok) => ok,
         Err(err) => {
             //send clip file that errored and the error, as Err
@@ -246,8 +249,58 @@ fn extract_clips(full_video: String, clip_length: String, interval: String, ffmp
         }
     };
     //read the result that was saved to a file
-    let contents = fs::read_to_string(file_name).expect("Should have been able to read ffprobe_output.txt");
-    let video_length: i32 = contents.parse().unwrap();
+    let output_file_content = fs::read_to_string(file_name_ffprobe_output).expect("Should have been able to read ffprobe_output.txt");
+    let first_dot_index = output_file_content.find(".").unwrap();
+    let video_length_in_str = output_file_content.get(0..first_dot_index).unwrap();
+    let video_length: i32 = video_length_in_str.parse().unwrap();
+    let mut how_much_clips_to_make = video_length/interval;
+    if how_much_clips_to_make == 0{
+        how_much_clips_to_make = 1
+    }
+    println!("Video_length");
+    if video_length < clip_length{
+        //dont make clip just tell the av1an to encode the whole video
+        //as it is really small, smaller then the clip that the user wanted
+        final_vec.push(full_video);
+        return Ok(final_vec);
+    }
+    let mut length_passed = 0;
+    let mut current_file_name_index = 0;
+    while length_passed < video_length {
+        let current_file_name = length_passed.to_string() + &"-".to_string() + &(length_passed + clip_length).to_string() + &"-".to_string() + &current_file_name_index.to_string() + ".mkv";
+        let ffmpeg_settings = format!("%1 -ss {} -i \"{}\" -c copy -t {} \"{}\"",
+            length_passed, full_video, clip_length, current_file_name);
+        println!("{}", ffmpeg_settings);
+        match create_file_encoding_settings(ffmpeg_settings.clone(), file_name_ffmpeg.clone()){
+            Ok(ok) => ok,
+            Err(_err) => {
+                let error_messege = "Cannot Create File".to_string();
+                return Err(error_messege);
+            }
+        };
+    
+        let ffmpeg_child_proccess = match Command::new("cmd").args(["/C", &file_name_ffmpeg, &ffmpeg_path]).spawn(){
+            Ok(out) => out,
+            Err(err) => {
+                //send clip file that errored and the error, as Err
+                let error_messege = "Cannot clip file: ".to_string() + &full_video + "\nError: " + &err.to_string();
+                return Err(error_messege);
+            }
+        };
+    
+        //waiting for procces to finish
+        let _ffmpeg_output = match ffmpeg_child_proccess.wait_with_output() {
+            Ok(ok) => ok,
+            Err(err) => {
+                //send clip file that errored and the error, as Err
+                let error_messege = "While waiting for file: ".to_string() + &full_video + "To clip it errored\nError: " + &err.to_string();
+                return Err(error_messege);
+            }
+        };
+        final_vec.push(current_file_name);
 
+        length_passed += clip_length + interval;
+        current_file_name_index += 1
+    }
     return Ok(final_vec);
 }

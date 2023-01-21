@@ -1,13 +1,22 @@
 use std::{process::Command, fs::{File, self}, io::Write, env};
 use serde_json::Value;
 
+use std::time::{Duration, Instant};
+use std::thread::sleep;
+
 //constants
-const WORKER_NUM: &str = "4";
+const WORKER_NUM: &str = "6";
 
 fn main() {
+    let now = Instant::now();
     check_and_create_folders_helpers();
-    let input_file = r"C:\Encode\720p_15s.mp4".to_string();
-    let output_file = r"C:\Encode\speed4-Q60.mp4".to_string();
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 3{
+        println!("check-av1-encode.exe INPUT_FILE OUTPUT_FILE");
+        return;
+    }
+    let input_file = args[1].to_string();
+    let output_file = args[2].to_string();
 
     let json_paths = match get_json(){
         Ok(ok) => ok,
@@ -26,55 +35,113 @@ fn main() {
     let av1an_setings_unformatted = json_paths[5].to_string();
 
 
-    let starting_crf = 60;
+    let starting_crf = 50;
     let speed = "4".to_string();
     let worker_num = WORKER_NUM.to_string();
     //get clips
     let clip_names = extract_clips(input_file.clone(), 3, 2, ffmpeg_path, ffprobe_path).unwrap();
-    let mut ssmi2_check_valid = false;
+    let ssmi2_check_valid = false;
     
-    //for each clip get make the settings do ssim2 90 on
+    //for the first clip find the value ssim2 90
     let mut current_crf = starting_crf;
-    let mut crf_delta_down = 10;
-    let mut crf_delta_up = 5;
+    let current_clip_name = format!("output_helper/clips/{}", clip_names[0]);
+    let current_clip_encoded_name = format!("output_helper/clips_encoded/{}",clip_names[0]);
     let mut was_above_90 = false;
     let mut was_below_90 = false;
-    for i in 0..clip_names.len(){
+    while !ssmi2_check_valid {
+        let current_crf_str: String = current_crf.to_string();
+        let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), current_clip_name.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), current_clip_encoded_name.clone());
+        encode_clip(current_clip_name.clone(), av1an_path.clone(), av1an_settings).unwrap();
+        let ssim2_results = ssim2_clip(current_clip_name.clone(), current_clip_encoded_name.clone(), arch_path.clone(), ssim2_path.clone()).unwrap();
+        let result_95: i32 = ssim2_results[0].parse().unwrap();
+        println!("\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name.clone(), current_crf, ssim2_results[0]);
+        if result_95 == 90{
+            break;//found the crf wanted, checking this crf with the other clips
+        }
+        if result_95 < 90{
+            was_below_90 = true;
+            if was_above_90{
+                current_crf -= 1;
+            }
+            else{
+                current_crf -= 5;
+            }
+        }
+        if result_95 > 90{
+            was_above_90 = true;
+            if was_below_90{
+                current_crf += 1;
+            }
+            else{
+                current_crf += 5;
+            }
+        }
+        fs::remove_file(current_clip_encoded_name.clone()).unwrap();//delete encoded file to encode again
+        fs::remove_file(current_clip_encoded_name.clone() + &".lwi".to_string()).unwrap();//delete encoded file iwi for ssim2
+    }
+    let mut crf_max_limit: i32 = current_crf;
+    //encode all the other clips
+    for i in 1..clip_names.len(){
+        if current_crf > crf_max_limit{
+            //i made a bug somewhere if this is executed
+            current_crf = crf_max_limit;
+            fs::create_dir_all("crf_went_over_the_limit").unwrap();
+        }
+        crf_max_limit = current_crf;
         let current_clip_name = format!("output_helper/clips/{}", clip_names[i]);
         let current_clip_encoded_name = format!("output_helper/clips_encoded/{}",clip_names[i]);
+        let mut was_above_90 = false;
+        let mut was_below_90 = false;
+        let mut first_check = true;
         while !ssmi2_check_valid {
             let current_crf_str: String = current_crf.to_string();
             let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), current_clip_name.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), current_clip_encoded_name.clone());
             encode_clip(current_clip_name.clone(), av1an_path.clone(), av1an_settings).unwrap();
             let ssim2_results = ssim2_clip(current_clip_name.clone(), current_clip_encoded_name.clone(), arch_path.clone(), ssim2_path.clone()).unwrap();
-            println!("ssim2: \"{}\"", ssim2_results[0]);
             let result_95: i32 = ssim2_results[0].parse().unwrap();
-            println!("current_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name.clone(), current_crf, ssim2_results[0]);
+            println!("\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name.clone(), current_crf, ssim2_results[0]);
             if result_95 == 90{
-                ssmi2_check_valid = true;
                 break;//found the crf wanted, checking this crf with the other clips
             }
             if result_95 < 90{
                 if was_above_90{
                     was_below_90 = true;
-                    current_crf -= 2;
+                    current_crf -= 1;
                 }
                 else{
-                    current_crf -= crf_delta_down;
+                    current_crf -= 5;
                 }
             }
             if result_95 > 90{
+                if first_check{
+                    //if first time and above 90, it cannot change the 
+                    break;
+                }
                 was_above_90 = true;
                 if was_below_90{//it should be "was below 90 while it was above 90 just now"
                     current_crf += 1;
                 }
                 else{
-                    current_crf += crf_delta_up;
+                    if current_crf + 5 >= crf_max_limit{
+                        current_crf += 1;
+                    }
+                    else{
+                        current_crf += 5;
+                    }
                 }
             }
             fs::remove_file(current_clip_encoded_name.clone()).unwrap();//delete encoded file to encode again
+            fs::remove_file(current_clip_encoded_name.clone() + &".lwi".to_string()).unwrap();//delete encoded file iwi for ssim2
+            first_check = false;
         }
     }
+    println!("FINAL_CRF: {}", current_crf);
+    println!("TIME_ELAPSED: {}", now.elapsed().as_secs());
+    let current_crf_str: String = current_crf.to_string();
+    let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), input_file.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), output_file.clone());
+    encode_clip(input_file.clone(), av1an_path.clone(), av1an_settings).unwrap();
+    println!("Finished Encoding: {}", input_file);
+
 }
 
 fn encode_clip(clip_path: String, av1an_path: String, av1an_settings: String) -> Result<i32, String>{
@@ -284,7 +351,7 @@ fn extract_clips(full_video: String, clip_length: i32, interval: i32, ffmpeg_pat
         }
     };
 
-    let _ffprobe_child_proccess = match Command::new("cmd").args(["/C", &file_name_ffprobe, &ffprobe_path]).output(){
+    let ffprobe_child_proccess = match Command::new("cmd").args(["/C", &file_name_ffprobe, &ffprobe_path]).output(){
         Ok(out) => out,
         Err(err) => {
             //send clip file that errored and the error, as Err
@@ -292,7 +359,13 @@ fn extract_clips(full_video: String, clip_length: i32, interval: i32, ffmpeg_pat
             return Err(error_messege);
         }
     };
-    println!("Probed");
+    if ffprobe_child_proccess.status.success(){
+        println!("Probed");
+    }
+    else{
+        return Err("It did not probe".to_string());
+    }
+
     //read the result that was saved to a file
     let output_file_content = fs::read_to_string(file_name_ffprobe_output).expect("Should have been able to read ffprobe_output.txt");
     let first_dot_index = output_file_content.find(".").unwrap();
@@ -337,7 +410,7 @@ fn extract_clips(full_video: String, clip_length: i32, interval: i32, ffmpeg_pat
 fn format_encoding_settings(settings: String, input_file: String, speed: String, crf: String, worker_num: String, output_file: String) -> String{
     let mut final_string = settings.clone();
     final_string = final_string.replace("INPUT", &("\"".to_string() + &input_file + &"\"".to_string()));//SPEED
-    final_string = final_string.replace("SPEED", &speed);//SPEED
+    //final_string = final_string.replace("SPEED", &speed);//SPEED
     final_string = final_string.replace("QUANTIZER", &crf);//CRF/QUANTIZER
     final_string = final_string.replace("WORKER_NUM", &worker_num);//WORKER_NUM
     final_string = final_string.replace("OUTPUT", &("\"".to_string() + &output_file + &"\"".to_string()));//WORKER_NUM

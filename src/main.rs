@@ -30,23 +30,19 @@ struct Args {
     #[arg(short = 'c', long, default_value_t = 45)]
     crf: i32,
 
-    /// Clip Length
+    /// Clip Length in seconds
     #[arg(short = 'l', long, default_value_t = 20)]
     clip_length: i32,
 
-    /// Clip Interval
+    /// Clip Interval in seconds
     #[arg(short = 'n', long, default_value_t = 360)]//every 6 min
     clip_interval: i32,
  }
 
 fn main() {
-    //start timer to check
+    //TODO: multithreading
 
-    //TODO: work when clip is bigger then video
-    //TODO: MERGE THE FOR LOOP !!!!
-    
-
-    let now = Instant::now();
+    let now = Instant::now();//benchmark until crf found
 
     let args = Args::parse();
     let input_file = args.input_file;
@@ -78,58 +74,22 @@ fn main() {
 
     //get clips
     let clip_names = extract_clips(input_file.clone(), clip_length, clip_interval, ffmpeg_path, ffprobe_path).unwrap();
-    let ssmi2_check_valid = false;
-    
-    //for the first clip find the value ssim2 90
-    let current_clip_name = format!("output_helper/clips/{}", clip_names[0]);
-    let current_clip_encoded_name = format!("output_helper/clips_encoded/{}",clip_names[0]);
-    let mut was_above_90 = false;
-    let mut was_below_90 = false;
-    while !ssmi2_check_valid {
-        let current_crf_str: String = current_crf.to_string();
-        let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), current_clip_name.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), current_clip_encoded_name.clone());
-        encode_clip(current_clip_name.clone(), av1an_path.clone(), av1an_settings).unwrap();
-        let ssim2_results = ssim2_clip(current_clip_name.clone(), current_clip_encoded_name.clone(), arch_path.clone(), ssim2_path.clone(), worker_num.to_string()).unwrap();
-        let result_95: i32 = ssim2_results[0].parse().unwrap();
-        println!("\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name.clone(), current_crf, ssim2_results[0]);
-        if result_95 == 90{
-            break;//found the crf wanted, checking this crf with the other clips
-        }
-        if result_95 < 90{
-            was_below_90 = true;
-            if was_above_90{
-                current_crf -= 1;
-            }
-            else{
-                current_crf -= 5;
-            }
-        }
-        if result_95 > 90{
-            was_above_90 = true;
-            if was_below_90{
-                current_crf += 1;
-            }
-            else{
-                current_crf += 5;
-            }
-        }
-        fs::remove_file(current_clip_encoded_name.clone()).unwrap();//delete encoded file to encode again
-        fs::remove_file(current_clip_encoded_name.clone() + &".lwi".to_string()).unwrap();//delete encoded file iwi for ssim2
+
+    if clip_names[0] == input_file{
+        println!("Clip_Length is bigger then the whole video, please check the settings");
+        let mut line = "".to_string();
+        std::io::stdin().read_line(&mut line).unwrap();
+        return;
     }
-    let mut crf_max_limit: i32 = current_crf;
-    //encode all the other clips
-    for i in 1..clip_names.len(){
-        if current_crf > crf_max_limit{
-            //i made a bug somewhere if this is executed
-            current_crf = crf_max_limit;
-            fs::create_dir_all("crf_went_over_the_limit").unwrap();
-        }
-        crf_max_limit = current_crf;
+
+    let ssmi2_check_valid = false;
+    let mut crf_values: Vec<i32> = Vec::new();
+    //for each clip find crf
+    for i in 0..clip_names.len(){
         let current_clip_name = format!("output_helper/clips/{}", clip_names[i]);
         let current_clip_encoded_name = format!("output_helper/clips_encoded/{}",clip_names[i]);
         let mut was_above_90 = false;
         let mut was_below_90 = false;
-        let mut first_check = true;
         while !ssmi2_check_valid {
             let current_crf_str: String = current_crf.to_string();
             let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), current_clip_name.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), current_clip_encoded_name.clone());
@@ -138,7 +98,9 @@ fn main() {
             let result_95: i32 = ssim2_results[0].parse().unwrap();
             println!("\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name.clone(), current_crf, ssim2_results[0]);
             if result_95 == 90{
-                break;//found the crf wanted, checking this crf with the other clips
+                //save current crf for later use
+                crf_values.push(current_crf);
+                break;//found the crf wanted
             }
             if result_95 < 90{
                 if was_above_90{
@@ -150,29 +112,22 @@ fn main() {
                 }
             }
             if result_95 > 90{
-                if first_check{
-                    //if first time and above 90, it cannot change the 
-                    break;
-                }
                 was_above_90 = true;
-                if was_below_90{//it should be "was below 90 while it was above 90 just now"
+                if was_below_90{
                     current_crf += 1;
                 }
                 else{
-                    if current_crf + 5 >= crf_max_limit{
-                        current_crf += 1;
-                    }
-                    else{
-                        current_crf += 5;
-                    }
+                    current_crf += 5;
                 }
             }
             fs::remove_file(current_clip_encoded_name.clone()).unwrap();//delete encoded file to encode again
             fs::remove_file(current_clip_encoded_name.clone() + &".lwi".to_string()).unwrap();//delete encoded file iwi for ssim2
-            first_check = false;
         }
     }
-    println!("FINAL_CRF: {}", current_crf);
+    let min_crf = find_lowest_crf(crf_values.clone());
+    let average_crf = find_average_crf(crf_values);
+    println!("min_crf: {}", min_crf);
+    println!("average_crf: {}", average_crf);
     println!("TIME_ELAPSED: {}", now.elapsed().as_secs());
     let current_crf_str: String = current_crf.to_string();
     let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), input_file.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), output_file.clone());
@@ -442,4 +397,26 @@ fn output_a_process(args: [&str; 3], custom_error: String) -> Result<i32, String
     else{
         return Err(custom_error + &"no error, some program start and finished without doing anything".to_string());
     }
+}
+
+fn find_lowest_crf(crf_list: Vec<i32>) -> i32{
+    let mut min = crf_list[0];
+    for i in 1..crf_list.len(){
+        if crf_list[i] < min{
+            min = crf_list[i];
+        }
+    }
+
+    return min;
+}
+
+fn find_average_crf(crf_list: Vec<i32>) -> i32{
+    let list_len = crf_list.len();
+    let mut sum = 0;
+
+    for i in 0..list_len{
+        sum += crf_list[i];
+    }
+
+    return sum/(list_len as i32);
 }

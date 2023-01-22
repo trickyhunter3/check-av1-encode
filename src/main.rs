@@ -1,22 +1,63 @@
-use std::{process::Command, fs::{File, self}, io::Write, env};
+use std::{process::Command, fs::{File, self}, io::Write};
 use serde_json::Value;
+use clap::Parser;
 
-use std::time::{Duration, Instant};
-use std::thread::sleep;
+use std::time::Instant;
 
-//constants
-const WORKER_NUM: &str = "6";
+#[derive(Parser)]
+#[command(name = "Check-AV1-Encode")]
+#[command(author = "Dennis S.")]
+#[command(version = "0.5")]
+#[command(about = "Finds the crf needed to make a video ssim2 score 90", long_about = None)]
+struct Args {
+    /// File to Encode
+    #[arg(short = 'i', long)]
+    input_file: String,
+
+    /// Encoded File Destination
+    #[arg(short = 'o', long)]
+    output_file: String,
+
+    /// Encoding Speed
+    #[arg(short = 's', long)]
+    speed: String,
+
+    /// Amount Of Workers
+    #[arg(short = 'w', long)]
+    worker_num: String,
+
+    /// Starting Crf
+    #[arg(short = 'c', long, default_value_t = 45)]
+    crf: i32,
+
+    /// Starting Crf
+    #[arg(short = 'l', long, default_value_t = 20)]
+    clip_length: i32,
+
+    /// Starting Crf
+    #[arg(short = 'n', long, default_value_t = 360)]//every 6 min
+    clip_interval: i32,
+ }
 
 fn main() {
+    //start timer to check
+
+    //TODO: work when clip is bigger then video
+    //TODO: MERGE THE FOR LOOP !!!!
+    
+
     let now = Instant::now();
+
+    let args = Args::parse();
+    let input_file = args.input_file;
+    let output_file = args.output_file;
+    let speed = args.speed;
+    let worker_num = args.worker_num;
+    let mut current_crf = args.crf;
+    let clip_length = args.clip_length;
+    let clip_interval = args.clip_interval;
+
     check_and_create_folders_helpers();
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 3{
-        println!("check-av1-encode.exe INPUT_FILE OUTPUT_FILE");
-        return;
-    }
-    let input_file = args[1].to_string();
-    let output_file = args[2].to_string();
 
     let json_paths = match get_json(){
         Ok(ok) => ok,
@@ -35,15 +76,11 @@ fn main() {
     let av1an_setings_unformatted = json_paths[5].to_string();
 
 
-    let starting_crf = 50;
-    let speed = "4".to_string();
-    let worker_num = WORKER_NUM.to_string();
     //get clips
-    let clip_names = extract_clips(input_file.clone(), 3, 2, ffmpeg_path, ffprobe_path).unwrap();
+    let clip_names = extract_clips(input_file.clone(), clip_length, clip_interval, ffmpeg_path, ffprobe_path).unwrap();
     let ssmi2_check_valid = false;
     
     //for the first clip find the value ssim2 90
-    let mut current_crf = starting_crf;
     let current_clip_name = format!("output_helper/clips/{}", clip_names[0]);
     let current_clip_encoded_name = format!("output_helper/clips_encoded/{}",clip_names[0]);
     let mut was_above_90 = false;
@@ -52,7 +89,7 @@ fn main() {
         let current_crf_str: String = current_crf.to_string();
         let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), current_clip_name.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), current_clip_encoded_name.clone());
         encode_clip(current_clip_name.clone(), av1an_path.clone(), av1an_settings).unwrap();
-        let ssim2_results = ssim2_clip(current_clip_name.clone(), current_clip_encoded_name.clone(), arch_path.clone(), ssim2_path.clone()).unwrap();
+        let ssim2_results = ssim2_clip(current_clip_name.clone(), current_clip_encoded_name.clone(), arch_path.clone(), ssim2_path.clone(), worker_num.to_string()).unwrap();
         let result_95: i32 = ssim2_results[0].parse().unwrap();
         println!("\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name.clone(), current_crf, ssim2_results[0]);
         if result_95 == 90{
@@ -97,7 +134,7 @@ fn main() {
             let current_crf_str: String = current_crf.to_string();
             let av1an_settings = format_encoding_settings(av1an_setings_unformatted.clone(), current_clip_name.clone(), speed.clone(), current_crf_str.clone(), worker_num.clone(), current_clip_encoded_name.clone());
             encode_clip(current_clip_name.clone(), av1an_path.clone(), av1an_settings).unwrap();
-            let ssim2_results = ssim2_clip(current_clip_name.clone(), current_clip_encoded_name.clone(), arch_path.clone(), ssim2_path.clone()).unwrap();
+            let ssim2_results = ssim2_clip(current_clip_name.clone(), current_clip_encoded_name.clone(), arch_path.clone(), ssim2_path.clone(), worker_num.to_string()).unwrap();
             let result_95: i32 = ssim2_results[0].parse().unwrap();
             println!("\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name.clone(), current_crf, ssim2_results[0]);
             if result_95 == 90{
@@ -158,32 +195,13 @@ fn encode_clip(clip_path: String, av1an_path: String, av1an_settings: String) ->
         }
     };
     //try start encoding
-    let av1an_child_proccess = match Command::new("cmd").args(["/C", &file_name, &av1an_path]).spawn(){
-        Ok(out) => out,
-        Err(err) => {
-            //send clip file that errored and the error, as Err
-            let error_messege = "Cannot start encoding file: ".to_string() + &clip_path + "\nError: " + &err.to_string();
-            return Err(error_messege);
-        }
-    };
-
-    //waiting for procces to finish
-    let av1an_output = match av1an_child_proccess.wait_with_output() {
-        Ok(ok) => ok,
-        Err(err) => {
-            //send clip file that errored and the error, as Err
-            let error_messege = "While waiting for file: ".to_string() + &clip_path + "To encode it errored\nError: " + &err.to_string();
-            return Err(error_messege);
-        }
-    };
-
-    if av1an_output.status.success(){
-        println!("successfully Encoded clip: {}", clip_path);
-    }
+    let av1an_args = ["/C", &file_name, &av1an_path];
+    let av1an_error = format!("Cannot start encoding file: {}\nError: ", clip_path);
+    spawn_a_process(av1an_args, av1an_error).unwrap();
     return Ok(0);
 }
 
-fn ssim2_clip(original_clip_path: String, encoded_clip_path: String, arch_path: String, ssim2_path: String) -> Result<Vec<String>, String>{
+fn ssim2_clip(original_clip_path: String, encoded_clip_path: String, arch_path: String, ssim2_path: String, worker_num: String) -> Result<Vec<String>, String>{
     //run ssmi2 with arch wsl
     //return 95th percentile and 5th percentile if succeeded
     let mut results_vec: Vec<String> = Vec::new();
@@ -191,7 +209,7 @@ fn ssim2_clip(original_clip_path: String, encoded_clip_path: String, arch_path: 
     let save_file_name = "output_helper/ssim2/ssim2_output.txt".to_string();
 
     let ssmi2_settings = format!("%1 runp {} video -f {} \"{}\" \"{}\" > {}",
-        ssim2_path, WORKER_NUM, original_clip_path, encoded_clip_path, save_file_name);
+        ssim2_path, worker_num, original_clip_path, encoded_clip_path, save_file_name);
 
     let file_name = "ssmi2_encode_settings.bat".to_string();
     match create_file_encoding_settings(ssmi2_settings, file_name.clone()){
@@ -202,29 +220,10 @@ fn ssim2_clip(original_clip_path: String, encoded_clip_path: String, arch_path: 
         }
     };
 
-    //try start ssim2 and 
-    let ssim2_child_proccess = match Command::new("cmd").args(["/C", &file_name, &arch_path]).spawn(){
-        Ok(out) => out,
-        Err(err) => {
-            //send clip file that errored and the error, as Err
-            let error_messege = "Cannot start ssmi2 file: ".to_string() + &encoded_clip_path + "\nError: " + &err.to_string();
-            return Err(error_messege);
-        }
-    };
-
-    //waiting for procces to finish
-    let ssim2_output = match ssim2_child_proccess.wait_with_output() {
-        Ok(ok) => ok,
-        Err(err) => {
-            //send clip file that errored and the error, as Err
-            let error_messege = "While waiting for file: ".to_string() + &encoded_clip_path + "To ssim2 it errored\nError: " + &err.to_string();
-            return Err(error_messege);
-        }
-    };
-
-    if ssim2_output.status.success(){
-        println!("ssmi2 successfully clip: {}", encoded_clip_path);
-    }
+    //try start ssim2
+    let ssim2_args = ["/C", &file_name, &arch_path];
+    let ssim2_error = format!("While Trying to ssim2 clip: {}\nError: ", encoded_clip_path);
+    spawn_a_process(ssim2_args, ssim2_error).unwrap();
 
     let output_file_content = fs::read_to_string(save_file_name).expect("Should have been able to read ssim2_output.txt");
     let lines: Vec<&str> = output_file_content.split("\n").collect();
@@ -350,21 +349,9 @@ fn extract_clips(full_video: String, clip_length: i32, interval: i32, ffmpeg_pat
             return Err(error_messege);
         }
     };
-
-    let ffprobe_child_proccess = match Command::new("cmd").args(["/C", &file_name_ffprobe, &ffprobe_path]).output(){
-        Ok(out) => out,
-        Err(err) => {
-            //send clip file that errored and the error, as Err
-            let error_messege = "Cannot probe file: ".to_string() + &full_video + "\nError: " + &err.to_string();
-            return Err(error_messege);
-        }
-    };
-    if ffprobe_child_proccess.status.success(){
-        println!("Probed");
-    }
-    else{
-        return Err("It did not probe".to_string());
-    }
+    let ffprobe_args = ["/C", &file_name_ffprobe, &ffprobe_path];
+    let ffprobe_error = format!("Cannot probe file: {}\nError: ", full_video);
+    output_a_process(ffprobe_args, ffprobe_error).unwrap();
 
     //read the result that was saved to a file
     let output_file_content = fs::read_to_string(file_name_ffprobe_output).expect("Should have been able to read ffprobe_output.txt");
@@ -383,6 +370,7 @@ fn extract_clips(full_video: String, clip_length: i32, interval: i32, ffmpeg_pat
         let current_file_name = length_passed.to_string() + &"-".to_string() + &(length_passed + clip_length).to_string() + &"-".to_string() + &current_file_name_index.to_string() + ".mkv";
         let ffmpeg_settings = format!("%1 -ss {} -i \"{}\" -c copy -t {} \"output_helper/clips/{}\"",
             length_passed, full_video, clip_length, current_file_name);
+
         match create_file_encoding_settings(ffmpeg_settings.clone(), file_name_ffmpeg.clone()){
             Ok(ok) => ok,
             Err(_err) => {
@@ -390,30 +378,26 @@ fn extract_clips(full_video: String, clip_length: i32, interval: i32, ffmpeg_pat
                 return Err(error_messege);
             }
         };
-        let _ffmpeg_child_proccess = match Command::new("cmd").args(["/C", &file_name_ffmpeg, &ffmpeg_path]).output(){
-            Ok(out) => out,
-            Err(err) => {
-                //send clip file that errored and the error, as Err
-                let error_messege = "Cannot clip file: ".to_string() + &full_video + "\nError: " + &err.to_string();
-                return Err(error_messege);
-            }
-        };
-        println!("Created Clip {}", current_file_name);
+
+        let ffmpeg_args = ["/C", &file_name_ffmpeg, &ffmpeg_path];
+        let ffmpeg_error = format!("Cannot clip file: {}\nError: ", full_video);
+        output_a_process(ffmpeg_args, ffmpeg_error).unwrap();
         final_vec.push(current_file_name);
 
         length_passed += clip_length + interval;
         current_file_name_index += 1;
     }
+    println!("Created all the Clips");
     return Ok(final_vec);
 }
 
 fn format_encoding_settings(settings: String, input_file: String, speed: String, crf: String, worker_num: String, output_file: String) -> String{
     let mut final_string = settings.clone();
-    final_string = final_string.replace("INPUT", &("\"".to_string() + &input_file + &"\"".to_string()));//SPEED
-    //final_string = final_string.replace("SPEED", &speed);//SPEED
-    final_string = final_string.replace("QUANTIZER", &crf);//CRF/QUANTIZER
+    final_string = final_string.replace("INPUT", &("\"".to_string() + &input_file + &"\"".to_string()));//INPUT
+    final_string = final_string.replace("SPEED", &speed);//SPEED
+    final_string = final_string.replace("CRF", &crf);//CRF/QUANTIZER
     final_string = final_string.replace("WORKER_NUM", &worker_num);//WORKER_NUM
-    final_string = final_string.replace("OUTPUT", &("\"".to_string() + &output_file + &"\"".to_string()));//WORKER_NUM
+    final_string = final_string.replace("OUTPUT", &("\"".to_string() + &output_file + &"\"".to_string()));//OUTPUT
     println!("{}", final_string);
     return final_string;
 }
@@ -423,4 +407,39 @@ fn check_and_create_folders_helpers(){
     fs::create_dir_all("output_helper/clips").unwrap();
     fs::create_dir_all("output_helper/clips_encoded").unwrap();
     fs::create_dir_all("output_helper/ffprobe").unwrap();
+}
+
+fn spawn_a_process(args: [&str; 3], custom_error: String) -> Result<i32, String>{
+    //using spawn to show the user the program running
+    let process = match Command::new("cmd").args(args).spawn(){
+        Ok(out) => out,
+        Err(err) => return Err(custom_error + &err.to_string())
+    };
+
+    let output = match process.wait_with_output() {
+        Ok(ok) => ok,
+        Err(err) => return Err(custom_error + &err.to_string())
+    };
+
+    if output.status.success(){
+        return Ok(1);        
+    }
+    else{
+        return Err(custom_error + &"no error, some program start and finished without doing anything".to_string());
+    }
+}
+
+fn output_a_process(args: [&str; 3], custom_error: String) -> Result<i32, String>{
+    //using output to hide the program
+    let process = match Command::new("cmd").args(args).output(){
+        Ok(out) => out,
+        Err(err) => return Err(custom_error + &err.to_string())
+    };
+
+    if process.status.success(){
+        return Ok(1);  
+    }
+    else{
+        return Err(custom_error + &"no error, some program start and finished without doing anything".to_string());
+    }
 }

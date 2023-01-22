@@ -30,11 +30,11 @@ struct Args {
     #[arg(short = 'c', long, default_value_t = 45)]
     crf: i32,
 
-    /// Starting Crf
+    /// Clip Length
     #[arg(short = 'l', long, default_value_t = 20)]
     clip_length: i32,
 
-    /// Starting Crf
+    /// Clip Interval
     #[arg(short = 'n', long, default_value_t = 360)]//every 6 min
     clip_interval: i32,
  }

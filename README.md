@@ -22,6 +22,7 @@ Options:
 
 # changing encoding settings:
 paste your encoding settings inside json and place
+
 INPUT
 
 SPEED

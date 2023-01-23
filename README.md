@@ -20,6 +20,20 @@ Options:
   -V, --version                        Print version
   ```
 
+# changing encoding settings:
+paste your encoding settings inside json and place
+INPUT
+
+SPEED
+
+CRF
+
+OUTPUT
+
+in the appropriate places
+
+
+
 ## Requirements:
 arch wsl with: ssmi2
 

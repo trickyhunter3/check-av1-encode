@@ -1,4 +1,6 @@
 please put paths.json inside the release folder
+
+
 the "ssim2" path inside paths.json is the path inside arch wsl to ssimulacra2_rs
 
 ## Usage:

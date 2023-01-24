@@ -40,6 +40,10 @@ struct Args {
     /// select what crf to use on output video (average/smallest)
     #[arg(short = 'u', long, default_value_t = String::from("smallest"))]
     crf_option: String,
+
+    /// if run inside arch wsl enable this
+    #[arg(short = 'a', long, default_value_t = false)]
+    inside_arch_wsl: bool,
  }
 
 fn main() {
@@ -97,7 +101,8 @@ fn main() {
             &worker_num, 
             &av1an_path, 
             &arch_path, 
-            &ssim2_path
+            &ssim2_path,
+            &"0".to_string()
         );
         current_crf = crf_90;
         crf_values.push(crf_90);
@@ -141,12 +146,12 @@ fn encode_clip(clip_path: &String, av1an_path: &String, av1an_settings: &String)
     return Ok(0);
 }
 
-fn ssim2_clip(original_clip_path: &String, encoded_clip_path: &String, arch_path: &String, ssim2_path: &String, worker_num: &String) -> Result<Vec<String>, String>{
+fn ssim2_clip(original_clip_path: &String, encoded_clip_path: &String, arch_path: &String, ssim2_path: &String, worker_num: &String, thread: &String) -> Result<Vec<String>, String>{
     //run ssmi2 with arch wsl
     //return 95th percentile and 5th percentile if succeeded
     let mut results_vec: Vec<String> = Vec::new();
 
-    let save_file_name = "output_helper/ssim2/ssim2_output.txt".to_string();
+    let save_file_name = format!("output_helper/ssim2/ssim2_output_{}.txt", thread);
 
     let ssmi2_settings = format!("%1 runp {} video -f {} \"{}\" \"{}\" > {}",
         ssim2_path, worker_num, original_clip_path, encoded_clip_path, save_file_name);
@@ -333,12 +338,11 @@ fn extract_clips(full_video: &String, clip_length: i32, interval: i32, ffmpeg_pa
 
 fn format_encoding_settings(settings: &String, input_file: &String, speed: &String, crf: &String, worker_num: &String, output_file: &String) -> String{
     let mut final_string = settings.clone();
-    final_string = final_string.replace("INPUT", &("\"".to_string() + &input_file + &"\"".to_string()));//INPUT
-    final_string = final_string.replace("SPEED", &speed);//SPEED
-    final_string = final_string.replace("CRF", &crf);//CRF/QUANTIZER
-    final_string = final_string.replace("WORKER_NUM", &worker_num);//WORKER_NUM
-    final_string = final_string.replace("OUTPUT", &("\"".to_string() + &output_file + &"\"".to_string()));//OUTPUT
-    println!("{}", final_string);
+    final_string = final_string.replace("INPUT", &("\"".to_string() + input_file + &"\"".to_string()));//INPUT
+    final_string = final_string.replace("SPEED", speed);//SPEED
+    final_string = final_string.replace("CRF", crf);//CRF/QUANTIZER
+    final_string = final_string.replace("WORKER_NUM", worker_num);//WORKER_NUM
+    final_string = final_string.replace("OUTPUT", &("\"".to_string() + output_file + &"\"".to_string()));//OUTPUT
     return final_string;
 }
 
@@ -386,7 +390,7 @@ fn output_a_process(args: [&str; 3], custom_error: &String) -> Result<i32, Strin
     }
 }
 
-fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_unformatted: &String, speed: &String, worker_num: &String, av1an_path: &String, arch_path: &String, ssim2_path: &String) -> i32{
+fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_unformatted: &String, speed: &String, worker_num: &String, av1an_path: &String, arch_path: &String, ssim2_path: &String, thread: &String) -> i32{
     let mut current_crf = starting_crf;
     let ssmi2_check_valid = false;
     let current_clip_name = format!("output_helper/clips/{}", clip_name);
@@ -397,7 +401,7 @@ fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_un
         let current_crf_str: String = current_crf.to_string();
         let av1an_settings = format_encoding_settings(av1an_setings_unformatted, &current_clip_name, speed, &current_crf_str, worker_num, &current_clip_encoded_name);
         encode_clip(&current_clip_name, av1an_path, &av1an_settings).unwrap();
-        let ssim2_results = ssim2_clip(&current_clip_name, &current_clip_encoded_name, arch_path, ssim2_path, &worker_num.to_string()).unwrap();
+        let ssim2_results = ssim2_clip(&current_clip_name, &current_clip_encoded_name, arch_path, ssim2_path, &worker_num.to_string(), thread).unwrap();
         let result_95: i32 = ssim2_results[0].parse().unwrap();
         println!("\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}", current_clip_name, current_crf, ssim2_results[0]);
         if result_95 == 90{
@@ -422,8 +426,8 @@ fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_un
                 current_crf += 5;
             }
         }
-        fs::remove_file(current_clip_encoded_name.clone()).unwrap();//delete encoded file to encode again
-        fs::remove_file(current_clip_encoded_name.clone() + &".lwi".to_string()).unwrap();//delete encoded file iwi for ssim2
+        fs::remove_file(current_clip_encoded_name.to_string()).unwrap();//delete encoded file to encode again
+        fs::remove_file(current_clip_encoded_name.to_string() + &".lwi".to_string()).unwrap();//delete encoded file iwi for ssim2
     }
 
     return -1;

@@ -1,15 +1,10 @@
 use clap::Parser;
-use clap::builder::Str;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::Value;
-use std::any::Any;
-use std::process::{Child, Output, Stdio};
+use std::fs;
+use std::process::Stdio;
 use std::time::Instant;
-use std::{
-    fs::{self, File},
-    io::Write,
-    process::Command,
-};
+use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "Check-AV1-Encode")]
@@ -132,7 +127,6 @@ fn main() {
                     &av1an_path,
                     &arch_path,
                     &ssim2_path,
-                    &index.to_string(),
                 );
                 *index += 1;
                 crf_90
@@ -152,7 +146,7 @@ fn main() {
     } else {
         crf_used_use = average_crf;
     }
-    println!("{:?}", crf_values);
+    println!("crf_values: {:?}", crf_values);
     println!("min_crf: {}", min_crf);
     println!("average_crf: {}", average_crf);
     println!("TIME_ELAPSED: {}", now.elapsed().as_secs());
@@ -164,17 +158,17 @@ fn main() {
         &worker_num,
         &output_file,
     );
-    encode_clip(&av1an_settings).unwrap();
+    encode_clip(&av1an_settings, &av1an_path).unwrap();
     println!("Finished Encoding: {}", input_file);
 }
 
-fn encode_clip(av1an_settings: &String) -> Result<i32, String> {
+fn encode_clip(av1an_settings: &String, av1an_path: &String) -> Result<i32, String> {
     //
     //  start encoding a clip with crf given and additional settings
     //
     let av1an_settings_formated = format_for_process(&av1an_settings);
     let av1an_settings_formated_ref: Vec<&str> = av1an_settings_formated.iter().map(|s| s.as_str()).collect();
-    match spawn_a_process(&"av1an".to_string(), av1an_settings_formated_ref){
+    match spawn_a_process(av1an_path, av1an_settings_formated_ref){
         Ok(_out) => println!("Clip encoded"),
         Err(err) => panic!("couldnt encode clip Err: {}", err),
     };
@@ -200,7 +194,6 @@ fn ssim2_clip(original_clip_path: &String,encoded_clip_path: &String,arch_path: 
         },
         Err(err) => panic!("Couldnt ssim2 a video Err: {}", err),
     };
-    println!("{}", ssim2_score);
     let lines: Vec<&str> = ssim2_score.split("\n").collect();
     let pre_last_line = lines[lines.len() - 2]; //last line is empty
     let first_colon_index = pre_last_line.find(":").unwrap();
@@ -288,7 +281,7 @@ fn get_json() -> Result<Vec<String>, String> {
     return Ok(final_vec);
 }
 
-fn extract_clips(full_video: &String,clip_length: i32,interval: i32,ffmpeg_path: &String,ffprobe_path: &String) -> Result<Vec<String>, String> {
+fn extract_clips(full_video: &String, clip_length: i32, interval: i32, ffmpeg_path: &String, ffprobe_path: &String) -> Result<Vec<String>, String> {
     //
     //  first get the video length using ffprobe
     //  then in a for loop extract each clip using the clip_length and the interval
@@ -301,7 +294,7 @@ fn extract_clips(full_video: &String,clip_length: i32,interval: i32,ffmpeg_path:
     //try to create a file to encode with
     let ffprobe_settings_formated = format_for_process(&ffprobe_settings);
     let ffprobe_settings_formated_ref: Vec<&str> = ffprobe_settings_formated.iter().map(|s| s.as_str()).collect();
-    let probe_in_string = match spawn_a_process(&"ffprobe".to_string(), ffprobe_settings_formated_ref){
+    let probe_in_string = match spawn_a_process(ffprobe_path, ffprobe_settings_formated_ref){
         Ok(out) => {
             println!("ffprobe successfully");
             out},
@@ -335,7 +328,7 @@ fn extract_clips(full_video: &String,clip_length: i32,interval: i32,ffmpeg_path:
         let ffmpeg_settings_formated = format_for_process(&ffmpeg_settings);
         let ffmpeg_settings_formated_ref: Vec<&str> = ffmpeg_settings_formated.iter().map(|s| s.as_str()).collect();
 
-        match spawn_a_process(&"ffmpeg".to_string(), ffmpeg_settings_formated_ref){
+        match spawn_a_process(ffmpeg_path, ffmpeg_settings_formated_ref){
             Ok(_out) => println!("ffmpeg successfully (created clip)"),
             Err(err) => panic!("Couldnt ffmpeg the file err: {}", err),
         };
@@ -400,7 +393,7 @@ fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>
     }
 }
 
-fn find_crf_for_90_ssim2(starting_crf: i32,clip_name: &String,av1an_setings_unformatted: &String,speed: &String,worker_num: &String,av1an_path: &String,arch_path: &String,ssim2_path: &String,thread: &String) -> i32 {
+fn find_crf_for_90_ssim2(starting_crf: i32,clip_name: &String,av1an_setings_unformatted: &String,speed: &String,worker_num: &String,av1an_path: &String,arch_path: &String,ssim2_path: &String) -> i32 {
     let mut current_crf = starting_crf;
     let ssmi2_check_valid = false;
     let current_clip_name = format!("output_helper/clips/{}", clip_name);
@@ -418,7 +411,7 @@ fn find_crf_for_90_ssim2(starting_crf: i32,clip_name: &String,av1an_setings_unfo
             &current_clip_encoded_name,
         );
         println!("Trying to encode: {}", &current_clip_name);
-        encode_clip(&av1an_settings).unwrap();
+        encode_clip(&av1an_settings, av1an_path).unwrap();
         println!("Encoded Succesfully: {}", &current_clip_name);
         println!("Trying to ssim2: {}", &current_clip_name);
         let ssim2_results = ssim2_clip(

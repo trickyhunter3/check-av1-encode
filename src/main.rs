@@ -97,27 +97,27 @@ fn main() {
     )
     .unwrap();
 
-    // if clip_names[0] == input_file {
-    //     println!("Clip_Length is bigger then the whole video, please check the settings");
-    //     let mut line = "".to_string();
-    //     std::io::stdin().read_line(&mut line).unwrap();
-    //     return;
-    // }
+    if clip_names[0] == input_file {
+        println!("Clip_Length is bigger then the whole video, please check the settings");
+        let mut line = "".to_string();
+        std::io::stdin().read_line(&mut line).unwrap();
+        return;
+    }
 
-    // let workers: usize = worker_num
-    //     .parse()
-    //     .expect("Failed parsing number of workers");
+    let workers: usize = worker_num
+        .parse()
+        .expect("Failed parsing number of workers");
 
-    // let total_available_threads = std::thread::available_parallelism()
-    //     .expect("Failed reading total threads on the system")
-    //     .get();
-    // let threads_to_use = total_available_threads / workers / 2;
-    // rayon::ThreadPoolBuilder::new()
-    //     .num_threads(threads_to_use)
-    //     .build_global()
-    //     .unwrap(); // Sets the threads used by rayon's internal ThreadPool
+    let total_available_threads = std::thread::available_parallelism()
+        .expect("Failed reading total threads on the system")
+        .get();
+    let threads_to_use = total_available_threads / workers / 2;
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads_to_use)
+        .build_global()
+        .unwrap(); // Sets the threads used by rayon's internal ThreadPool
 
-    // let _num_of_clips = clip_names.len();
+    let _num_of_clips = clip_names.len();
 
     // //for each clip find crf
     // let crf_values: Vec<i32> = clip_names
@@ -170,93 +170,51 @@ fn main() {
     // println!("Finished Encoding: {}", input_file);
 }
 
-// fn encode_clip(clip_path: &String,av1an_path: &String,av1an_settings: &String) -> Result<i32, String> {
-//     //
-//     //  start encoding a clip with crf given and additional settings
-//     //
-//     let file_name = "av1an_encode_settings.bat".to_string();
-//     //try to create a file to encode with
-//     match create_file_encoding_settings(&av1an_settings, &file_name) {
-//         Ok(ok) => ok,
-//         Err(_err) => {
-//             let error_messege = "Cannot Create File".to_string();
-//             return Err(error_messege);
-//         }
-//     };
-//     //try start encoding
-//     let av1an_args: Vec<&str>;
-//     #[cfg(target_os = "linux")]
-//     {
-//         av1an_args = vec![&file_name, &av1an_path];
-//     }
-//     #[cfg(target_os = "windows")]
-//     {
-//         av1an_args = vec!["/C", &file_name, &av1an_path];
-//     }
-//     let av1an_error = format!("Cannot start encoding file: {}\nError: ", clip_path);
-//     spawn_a_process(av1an_args.as_slice(), &av1an_error).unwrap();
-//     return Ok(0);
-// }
+fn encode_clip(av1an_settings: &String) -> Result<i32, String> {
+    //
+    //  start encoding a clip with crf given and additional settings
+    //
+    let av1an_settings_formated = format_for_process(&av1an_settings);
+    let av1an_settings_formated_ref: Vec<&str> = av1an_settings_formated.iter().map(|s| s.as_str()).collect();
+    match spawn_a_process(&"av1an".to_string(), av1an_settings_formated_ref){
+        Ok(_out) => println!("Created"),
+        Err(err) => panic!("couldnt encode clip Err: {}", err),
+    };
+    return Ok(0);
+}
 
-// fn ssim2_clip(original_clip_path: &String,encoded_clip_path: &String,arch_path: &String,ssim2_path: &String,worker_num: &String,thread: &String) -> Result<Vec<String>, String> {
-//     //run ssmi2 with arch wsl
-//     //return 95th percentile and 5th percentile if succeeded
-//     let mut results_vec: Vec<String> = Vec::new();
+fn ssim2_clip(original_clip_path: &String,encoded_clip_path: &String,arch_path: &String,ssim2_path: &String,worker_num: &String,thread: &String) -> Result<Vec<String>, String> {
+    //run ssmi2 with arch wsl
+    //return 95th percentile and 5th percentile if succeeded
+    let mut results_vec: Vec<String> = Vec::new();
 
-//     let save_file_name = format!("output_helper/ssim2/ssim2_output_{}.txt", thread);
+    let ssmi2_settings = format!(
+        "runp {} video -f {} \"{}\" \"{}\"",
+        ssim2_path, worker_num, original_clip_path, encoded_clip_path
+    );
+    let ssmi2_settings_formated = format_for_process(&ssmi2_settings);
+    let ssmi2_settings_formated_ref: Vec<&str> = ssmi2_settings_formated.iter().map(|s| s.as_str()).collect();
 
-//     let ssmi2_settings: String;
-//     #[cfg(target_os = "linux")]
-//     {
-//         ssmi2_settings = format!(
-//             "$1 runp {} video -f {} \"{}\" \"{}\" > {}",
-//             ssim2_path, worker_num, original_clip_path, encoded_clip_path, save_file_name
-//         );
-//     }
-//     #[cfg(target_os = "windows")]
-//     {
-//         ssmi2_settings = format!(
-//             "%1 runp {} video -f {} \"{}\" \"{}\" > {}",
-//             ssim2_path, worker_num, original_clip_path, encoded_clip_path, save_file_name
-//         );
-//     }
+    let ssim2_score = match spawn_a_process(&"arch".to_string(), ssmi2_settings_formated_ref){
+        Ok(out) => {
+            println!("ssim2 successfully");
+            out
+        },
+        Err(err) => panic!("Couldnt ssim2 a video Err: {}", err),
+    };
 
-//     let file_name = "ssmi2_encode_settings.bat".to_string();
-//     match create_file_encoding_settings(&ssmi2_settings, &file_name) {
-//         Ok(ok) => ok,
-//         Err(_err) => {
-//             let error_messege = "Cannot Create File".to_string();
-//             return Err(error_messege);
-//         }
-//     };
+    let lines: Vec<&str> = ssim2_score.split("\n").collect();
+    let pre_last_line = lines[lines.len() - 2]; //last line is empty
+    let first_colon_index = pre_last_line.find(":").unwrap();
+    let first_dot_index = pre_last_line.find(".").unwrap();
+    let ninty_fifth_percent_in_str = pre_last_line
+        .get((first_colon_index + 2)..first_dot_index)
+        .unwrap();
+    //let ninty_fifth_percent: i32 = ninty_fifth_percent_in_str.parse().unwrap();
 
-//     //try start ssim2
-//     let ssim2_args: Vec<&str>;
-//     #[cfg(target_os = "linux")]
-//     {
-//         ssim2_args = vec![&file_name, &arch_path];
-//     }
-//     #[cfg(target_os = "windows")]
-//     {
-//         ssim2_args = vec!["/C", &file_name, &arch_path];
-//     }
-//     let ssim2_error = format!("While Trying to ssim2 clip: {}\nError: ", encoded_clip_path);
-//     spawn_a_process(ssim2_args.as_slice(), &ssim2_error).unwrap();
-
-//     let output_file_content =
-//         fs::read_to_string(save_file_name).expect("Should have been able to read ssim2_output.txt");
-//     let lines: Vec<&str> = output_file_content.split("\n").collect();
-//     let pre_last_line = lines[lines.len() - 2]; //last line is empty
-//     let first_colon_index = pre_last_line.find(":").unwrap();
-//     let first_dot_index = pre_last_line.find(".").unwrap();
-//     let ninty_fifth_percent_in_str = pre_last_line
-//         .get((first_colon_index + 2)..first_dot_index)
-//         .unwrap();
-//     //let ninty_fifth_percent: i32 = ninty_fifth_percent_in_str.parse().unwrap();
-
-//     results_vec.push(ninty_fifth_percent_in_str.to_string());
-//     return Ok(results_vec);
-// }
+    results_vec.push(ninty_fifth_percent_in_str.to_string());
+    return Ok(results_vec);
+}
 
 // fn create_file_encoding_settings(settings: &String, file_name: &String) -> Result<String, i32> {
 //     //
@@ -366,8 +324,6 @@ fn extract_clips(full_video: &String,clip_length: i32,interval: i32,ffmpeg_path:
             out},
         Err(err) => panic!("Couldnt ffprobe the file err: {}", err),
     };
-    println!("{}", probe_in_string);
-    println!("{:#?}", probe_in_string);
 
     //read the result that was saved to a file
     let first_dot_index = probe_in_string.find(".").unwrap();
@@ -410,21 +366,21 @@ fn extract_clips(full_video: &String,clip_length: i32,interval: i32,ffmpeg_path:
     return Ok(final_vec);
 }
 
-// fn format_encoding_settings(settings: &String, input_file: &String, speed: &String, crf: &String, worker_num: &String, output_file: &String) -> String {
-//     let mut final_string = settings.clone();
-//     final_string = final_string.replace(
-//         "INPUT",
-//         &("\"".to_string() + input_file + &"\"".to_string()),
-//     ); //INPUT
-//     final_string = final_string.replace("SPEED", speed); //SPEED
-//     final_string = final_string.replace("CRF", crf); //CRF/QUANTIZER
-//     final_string = final_string.replace("WORKER_NUM", worker_num); //WORKER_NUM
-//     final_string = final_string.replace(
-//         "OUTPUT",
-//         &("\"".to_string() + output_file + &"\"".to_string()),
-//     ); //OUTPUT
-//     return final_string;
-// }
+fn format_encoding_settings(settings: &String, input_file: &String, speed: &String, crf: &String, worker_num: &String, output_file: &String) -> String {
+    let mut final_string = settings.clone();
+    final_string = final_string.replace(
+        "INPUT",
+        &("\"".to_string() + input_file + &"\"".to_string()),
+    ); //INPUT
+    final_string = final_string.replace("SPEED", speed); //SPEED
+    final_string = final_string.replace("CRF", crf); //CRF/QUANTIZER
+    final_string = final_string.replace("WORKER_NUM", worker_num); //WORKER_NUM
+    final_string = final_string.replace(
+        "OUTPUT",
+        &("\"".to_string() + output_file + &"\"".to_string()),
+    ); //OUTPUT
+    return final_string;
+}
 
 fn check_and_create_folders_helpers() {
     //delete latest encode
@@ -437,7 +393,7 @@ fn check_and_create_folders_helpers() {
 
 fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>{
     //using spawn to show the user the program running
-    let process = match Command::new(&app_name).args(args).stdout(Stdio::piped()).spawn() {
+    let process = match Command::new(&app_name).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(out) => out,
         Err(err) => {
             let temp = "ERR: ".to_string() + &err.to_string();

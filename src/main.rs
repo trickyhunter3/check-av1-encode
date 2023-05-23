@@ -3,7 +3,7 @@ use clap::builder::Str;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::Value;
 use std::any::Any;
-use std::process::{Child, Output};
+use std::process::{Child, Output, Stdio};
 use std::time::Instant;
 use std::{
     fs::{self, File},
@@ -437,7 +437,7 @@ fn check_and_create_folders_helpers() {
 
 fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>{
     //using spawn to show the user the program running
-    let process = match Command::new(&app_name).args(args).spawn() {
+    let process = match Command::new(&app_name).args(args).stdout(Stdio::piped()).spawn() {
         Ok(out) => out,
         Err(err) => {
             let temp = "ERR: ".to_string() + &err.to_string();
@@ -457,10 +457,10 @@ fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>
         println!("status: {}", output.status);
         println!("stderr: {:?}", &output.stderr);
         println!("stdout: {:?}", &output.stdout);
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        return Err(String::from_utf8(output.stderr).unwrap());
     }
     else{
-        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        return Ok(String::from_utf8(output.stdout).unwrap());
     }
 }
 

@@ -4,5 +4,5 @@
     "arch": "Arch.exe",
     "ffmpeg": "ffmpeg.exe",
     "ffprobe": "ffprobe.exe",
-    "encoding_settings": "-i INPUT -y --verbose --resume --split-method av-scenechange -m lsmash -c mkvmerge --photon-noise 2 --chroma-noise -e rav1e --force -v \"--speed SPEED --threads 2 --tiles 2 --quantizer CRF\" --pix-format yuv420p10le -w WORKER_NUM -x 240 -o OUTPUT"
+    "encoding_settings": "-i INPUT --workers WORKER_NUM --resume --photon-noise 2 --chroma-noise --sc-downscale-height 540 -v \"--end-usage=q --cpu-used=SPEED --cq-level=CRF --threads=2 --aq-mode=1 --enable-qm=1 --lag-in-frames=64 --arnr-strength=1 --arnr-maxframes=4 --quant-sharpness=3 --disable-trellis-quant=0 --enable-fwd-kf=1 --min-q=1 --deltaq-mode=1 --bit-depth=10 --tune-content=psy --enable-chroma-deltaq=1 --tune=ssim\" -o OUTPUT"
 }

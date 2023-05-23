@@ -50,8 +50,6 @@ struct Args {
 }
 
 fn main() {
-    //TODO: multithreading
-
     let now = Instant::now(); //benchmark until crf found
 
     let args = Args::parse();
@@ -393,7 +391,7 @@ fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>
     }
 }
 
-fn find_crf_for_90_ssim2(starting_crf: i32,clip_name: &String,av1an_setings_unformatted: &String,speed: &String,worker_num: &String,av1an_path: &String,arch_path: &String,ssim2_path: &String) -> i32 {
+fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_unformatted: &String, speed: &String, worker_num: &String, av1an_path: &String, arch_path: &String, ssim2_path: &String) -> i32 {
     let mut current_crf = starting_crf;
     let ssmi2_check_valid = false;
     let current_clip_name = format!("output_helper/clips/{}", clip_name);

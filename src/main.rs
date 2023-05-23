@@ -108,17 +108,15 @@ fn main() {
         .parse()
         .expect("Failed parsing number of workers");
 
-    let total_available_threads = std::thread::available_parallelism()
-        .expect("Failed reading total threads on the system")
-        .get();
-    let threads_to_use = total_available_threads / workers / 2;
+    let num_of_clips = clip_names.len();
+    let threads_to_use = (workers).min(num_of_clips);
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads_to_use)
         .build_global()
         .unwrap(); // Sets the threads used by rayon's internal ThreadPool
 
-    let _num_of_clips = clip_names.len();
 
+    let worker_for_each_thread = (workers / num_of_clips).max(1);
     //for each clip find crf
     let crf_values: Vec<i32> = clip_names
         .par_iter()
@@ -130,7 +128,7 @@ fn main() {
                     clip_name,
                     &av1an_setings_unformatted,
                     &speed,
-                    &"1".to_string(),
+                    &worker_for_each_thread.to_string(),
                     &av1an_path,
                     &arch_path,
                     &ssim2_path,
@@ -177,7 +175,7 @@ fn encode_clip(av1an_settings: &String) -> Result<i32, String> {
     let av1an_settings_formated = format_for_process(&av1an_settings);
     let av1an_settings_formated_ref: Vec<&str> = av1an_settings_formated.iter().map(|s| s.as_str()).collect();
     match spawn_a_process(&"av1an".to_string(), av1an_settings_formated_ref){
-        Ok(_out) => println!("Created"),
+        Ok(_out) => println!("Clip encoded"),
         Err(err) => panic!("couldnt encode clip Err: {}", err),
     };
     return Ok(0);
@@ -369,10 +367,8 @@ fn format_encoding_settings(settings: &String, input_file: &String, speed: &Stri
 fn check_and_create_folders_helpers() {
     //delete latest encode
     fs::remove_dir_all("output_helper/").unwrap();
-    fs::create_dir_all("output_helper/ssim2").unwrap();
     fs::create_dir_all("output_helper/clips").unwrap();
     fs::create_dir_all("output_helper/clips_encoded").unwrap();
-    fs::create_dir_all("output_helper/ffprobe").unwrap();
 }
 
 fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>{
@@ -421,7 +417,10 @@ fn find_crf_for_90_ssim2(starting_crf: i32,clip_name: &String,av1an_setings_unfo
             worker_num,
             &current_clip_encoded_name,
         );
+        println!("Trying to encode: {}", &current_clip_name);
         encode_clip(&av1an_settings).unwrap();
+        println!("Encoded Succesfully: {}", &current_clip_name);
+        println!("Trying to ssim2: {}", &current_clip_name);
         let ssim2_results = ssim2_clip(
             &current_clip_name,
             &current_clip_encoded_name,
@@ -430,6 +429,7 @@ fn find_crf_for_90_ssim2(starting_crf: i32,clip_name: &String,av1an_setings_unfo
             &worker_num.to_string(),
         )
         .unwrap();
+        println!("ssim2 Succesfully: {}", &current_clip_name);
         let result_95: i32 = ssim2_results[0].parse().unwrap();
         println!(
             "\n\n\n\ncurrent_clip: {}, current_crf: {}, current_ssim2: {}",

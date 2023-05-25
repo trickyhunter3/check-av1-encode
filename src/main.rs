@@ -138,12 +138,12 @@ fn main() {
 
     let min_crf = find_lowest_crf(crf_values.clone());
     let average_crf = find_average_crf(crf_values.clone());
-    let crf_used_use;
-    if crf_used == "smallest".to_string() {
-        crf_used_use = min_crf;
-    } else {
-        crf_used_use = average_crf;
+    let crf_used_use: i32 = if crf_used == "smallest"{
+        min_crf
     }
+    else{
+        average_crf
+    };
     println!("crf_values: {:?}", crf_values);
     println!("min_crf: {}", min_crf);
     println!("average_crf: {}", average_crf);
@@ -164,13 +164,13 @@ fn encode_clip(av1an_settings: &String, av1an_path: &String) -> Result<i32, Stri
     //
     //  start encoding a clip with crf given and additional settings
     //
-    let av1an_settings_formated = format_for_process(&av1an_settings);
+    let av1an_settings_formated = format_for_process(av1an_settings);
     let av1an_settings_formated_ref: Vec<&str> = av1an_settings_formated.iter().map(|s| s.as_str()).collect();
     match spawn_a_process(av1an_path, av1an_settings_formated_ref){
         Ok(_out) => println!("Clip encoded"),
         Err(err) => panic!("couldnt encode clip Err: {}", err),
     };
-    return Ok(0);
+    Ok(0)
 }
 
 fn ssim2_clip(original_clip_path: &String,encoded_clip_path: &String,arch_path: &String,ssim2_path: &String,worker_num: &String) -> Result<Vec<String>, String> {
@@ -192,17 +192,17 @@ fn ssim2_clip(original_clip_path: &String,encoded_clip_path: &String,arch_path: 
         },
         Err(err) => panic!("Couldnt ssim2 a video Err: {}", err),
     };
-    let lines: Vec<&str> = ssim2_score.split("\n").collect();
+    let lines: Vec<&str> = ssim2_score.split('\n').collect();
     let pre_last_line = lines[lines.len() - 2]; //last line is empty
-    let first_colon_index = pre_last_line.find(":").unwrap();
-    let first_dot_index = pre_last_line.find(".").unwrap();
+    let first_colon_index = pre_last_line.find(':').unwrap();
+    let first_dot_index = pre_last_line.find('.').unwrap();
     let ninty_fifth_percent_in_str = pre_last_line
         .get((first_colon_index + 2)..first_dot_index)
         .unwrap();
     //let ninty_fifth_percent: i32 = ninty_fifth_percent_in_str.parse().unwrap();
 
     results_vec.push(ninty_fifth_percent_in_str.to_string());
-    return Ok(results_vec);
+    Ok(results_vec)
 }
 
 fn get_json() -> Result<Vec<String>, String> {
@@ -276,7 +276,7 @@ fn get_json() -> Result<Vec<String>, String> {
     final_vec.push(ffmpeg_path_value);
     final_vec.push(ffprobe_path_value);
     final_vec.push(av1an_settings_path_value);
-    return Ok(final_vec);
+    Ok(final_vec)
 }
 
 fn extract_clips(full_video: &String, clip_length: i32, interval: i32, ffmpeg_path: &String, ffprobe_path: &String) -> Result<Vec<String>, String> {
@@ -300,7 +300,7 @@ fn extract_clips(full_video: &String, clip_length: i32, interval: i32, ffmpeg_pa
     };
 
     //read the result that was saved to a file
-    let first_dot_index = probe_in_string.find(".").unwrap();
+    let first_dot_index = probe_in_string.find('.').unwrap();
     let video_length_in_str = probe_in_string.get(0..first_dot_index).unwrap();
     let video_length: i32 = video_length_in_str.parse().unwrap();
     if video_length < clip_length {
@@ -313,9 +313,9 @@ fn extract_clips(full_video: &String, clip_length: i32, interval: i32, ffmpeg_pa
     let mut current_file_name_index = 0;
     while length_passed < video_length {
         let current_file_name = length_passed.to_string()
-            + &"-".to_string()
+            + "-"
             + &(length_passed + clip_length).to_string()
-            + &"-".to_string()
+            + "-"
             + &current_file_name_index.to_string()
             + ".mkv";
 
@@ -336,23 +336,23 @@ fn extract_clips(full_video: &String, clip_length: i32, interval: i32, ffmpeg_pa
         current_file_name_index += 1;
     }
     println!("Created all the Clips");
-    return Ok(final_vec);
+    Ok(final_vec)
 }
 
-fn format_encoding_settings(settings: &String, input_file: &String, speed: &String, crf: &String, worker_num: &String, output_file: &String) -> String {
-    let mut final_string = settings.clone();
+fn format_encoding_settings(settings: &str, input_file: &String, speed: &str, crf: &str, worker_num: &str, output_file: &String) -> String {
+    let mut final_string = settings.to_owned();
     final_string = final_string.replace(
         "INPUT",
-        &("\"".to_string() + input_file + &"\"".to_string()),
+        &("\"".to_string() + input_file + "\""),
     ); //INPUT
     final_string = final_string.replace("SPEED", speed); //SPEED
     final_string = final_string.replace("CRF", crf); //CRF/QUANTIZER
     final_string = final_string.replace("WORKER_NUM", worker_num); //WORKER_NUM
     final_string = final_string.replace(
         "OUTPUT",
-        &("\"".to_string() + output_file + &"\"".to_string()),
+        &("\"".to_string() + output_file + "\""),
     ); //OUTPUT
-    return final_string;
+    final_string
 }
 
 fn check_and_create_folders_helpers() {
@@ -364,7 +364,7 @@ fn check_and_create_folders_helpers() {
 
 fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>{
     //using spawn to show the user the program running
-    let process = match Command::new(&app_name).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+    let process = match Command::new(app_name).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(out) => out,
         Err(err) => {
             let temp = "ERR: ".to_string() + &err.to_string();
@@ -384,21 +384,20 @@ fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>
         println!("status: {}", output.status);
         println!("stderr: {:?}", &output.stderr);
         println!("stdout: {:?}", &output.stdout);
-        return Err(String::from_utf8(output.stderr).unwrap());
+        Err(String::from_utf8(output.stderr).unwrap())
     }
     else{
-        return Ok(String::from_utf8(output.stdout).unwrap());
+        Ok(String::from_utf8(output.stdout).unwrap())
     }
 }
 
-fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_unformatted: &String, speed: &String, worker_num: &String, av1an_path: &String, arch_path: &String, ssim2_path: &String) -> i32 {
+fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_unformatted: &str, speed: &str, worker_num: &String, av1an_path: &String, arch_path: &String, ssim2_path: &String) -> i32 {
     let mut current_crf = starting_crf;
-    let ssmi2_check_valid = false;
     let current_clip_name = format!("output_helper/clips/{}", clip_name);
     let current_clip_encoded_name = format!("output_helper/clips_encoded/{}", clip_name);
     let mut was_above_90 = false;
     let mut was_below_90 = false;
-    while !ssmi2_check_valid {
+    while current_crf > 15 {//crf should not be less them 15
         let current_crf_str: String = current_crf.to_string();
         let av1an_settings = format_encoding_settings(
             av1an_setings_unformatted,
@@ -446,12 +445,12 @@ fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_un
                 current_crf += 5;
             }
         }
-        fs::remove_file(current_clip_encoded_name.to_string()).unwrap(); //delete encoded file to encode again
-        fs::remove_file(current_clip_encoded_name.to_string() + &".lwi".to_string()).unwrap();
+        fs::remove_file(&current_clip_encoded_name).unwrap(); //delete encoded file to encode again
+        fs::remove_file(current_clip_encoded_name.to_string() + ".lwi").unwrap();
         //delete encoded file iwi for ssim2
     }
 
-    return -1;
+    current_crf
 }
 
 fn find_lowest_crf(crf_list: Vec<i32>) -> i32 {
@@ -466,22 +465,22 @@ fn find_average_crf(crf_list: Vec<i32>) -> i32 {
     let list_len = crf_list.len();
     let sum: i32 = crf_list.iter().sum();
 
-    return sum / (list_len as i32);
+    sum / (list_len as i32)
 }
 
 fn format_for_process(settings: &String) -> Vec<String>{
     //need to take this and change into 1 argument at a time
     let settings_final = settings.to_string();
     let mut final_vec: Vec<String> = Vec::new();
-    let everything_splitted: Vec<String> = settings_final.split(" ").map(|e| e.to_string()).collect();
+    let everything_splitted: Vec<String> = settings_final.split(' ').map(|e| e.to_string()).collect();
     let mut skip_until = 0;
     for i in 0..everything_splitted.len(){
         if skip_until == 0{
             if everything_splitted[i].starts_with('"'){
                 //find the end of the qoute
                 let mut qoute_found_on = 0;
-                for j in i..everything_splitted.len(){
-                    if everything_splitted[j].ends_with('"'){
+                for (j, current_split) in everything_splitted.iter().enumerate().skip(i){
+                    if current_split.ends_with('"'){
                         qoute_found_on = j;
                         break;
                     }
@@ -490,10 +489,10 @@ fn format_for_process(settings: &String) -> Vec<String>{
                 let mut strings_together: String;
                 if i != qoute_found_on{
                     strings_together = everything_splitted[i][1..].to_string();
-                    strings_together.push_str(" ");
-                    for j in i+1..qoute_found_on{
-                        strings_together.push_str(&everything_splitted[j]);
-                        strings_together.push_str(" ");
+                    strings_together.push(' ');
+                    for j in everything_splitted.iter().take(qoute_found_on).skip(i+1){
+                        strings_together.push_str(j);
+                        strings_together.push(' ');
                     }
                     //add the last part but without the double qoute
                     let temp_string = everything_splitted[qoute_found_on].clone();
@@ -515,5 +514,5 @@ fn format_for_process(settings: &String) -> Vec<String>{
         }
     }
 
-    return final_vec;
+    final_vec
 }

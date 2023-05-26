@@ -3,13 +3,12 @@ use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::Value;
 use std::fs;
 use std::process::Stdio;
-use std::time::Instant;
 use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "Check-AV1-Encode")]
 #[command(author = "Dennis S.")]
-#[command(version = "0.5")]
+#[command(version = "0.9")]
 #[command(about = "Finds the crf needed to make a video ssim2 score 90", long_about = None)]
 struct Args {
     /// File to Encode
@@ -50,8 +49,6 @@ struct Args {
 }
 
 fn main() {
-    let now = Instant::now(); //benchmark until crf found
-
     let args = Args::parse();
     let input_file = args.input_file;
     let output_file = args.output_file;
@@ -61,6 +58,7 @@ fn main() {
     let clip_length = args.clip_length;
     let clip_interval = args.clip_interval;
     let crf_used = args.crf_option;
+    let inside_arch_wsl = args.inside_arch_wsl;
 
     check_and_create_folders_helpers();
 
@@ -125,6 +123,7 @@ fn main() {
                     &av1an_path,
                     &arch_path,
                     &ssim2_path,
+                    inside_arch_wsl,
                 );
                 *index += 1;
                 crf_90
@@ -147,7 +146,6 @@ fn main() {
     println!("crf_values: {:?}", crf_values);
     println!("min_crf: {}", min_crf);
     println!("average_crf: {}", average_crf);
-    println!("TIME_ELAPSED: {}", now.elapsed().as_secs());
     let av1an_settings = format_encoding_settings(
         &av1an_setings_unformatted,
         &input_file,
@@ -173,15 +171,23 @@ fn encode_clip(av1an_settings: &String, av1an_path: &String) -> Result<i32, Stri
     Ok(0)
 }
 
-fn ssim2_clip(original_clip_path: &String,encoded_clip_path: &String,arch_path: &String,ssim2_path: &String,worker_num: &String) -> Result<Vec<String>, String> {
+fn ssim2_clip(original_clip_path: &String,encoded_clip_path: &String,arch_path: &String,ssim2_path: &String,worker_num: &String, inside_arch_wsl: bool) -> Result<Vec<String>, String> {
     //run ssmi2 with arch wsl
     //return 95th percentile and 5th percentile if succeeded
     let mut results_vec: Vec<String> = Vec::new();
 
-    let ssmi2_settings = format!(
-        "runp {} video -f {} \"{}\" \"{}\"",
-        ssim2_path, worker_num, original_clip_path, encoded_clip_path
-    );
+    let ssmi2_settings = if inside_arch_wsl {
+        format!(
+            "{} video -f {} \"{}\" \"{}\"",
+            ssim2_path, worker_num, original_clip_path, encoded_clip_path
+        )
+    }
+    else{
+        format!(
+            "runp {} video -f {} \"{}\" \"{}\"",
+            ssim2_path, worker_num, original_clip_path, encoded_clip_path
+        )
+    };
     let ssmi2_settings_formated = format_for_process(&ssmi2_settings);
     let ssmi2_settings_formated_ref: Vec<&str> = ssmi2_settings_formated.iter().map(|s| s.as_str()).collect();
 
@@ -391,7 +397,7 @@ fn spawn_a_process(app_name: &String, args: Vec<&str>) -> Result<String, String>
     }
 }
 
-fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_unformatted: &str, speed: &str, worker_num: &String, av1an_path: &String, arch_path: &String, ssim2_path: &String) -> i32 {
+fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_unformatted: &str, speed: &str, worker_num: &String, av1an_path: &String, arch_path: &String, ssim2_path: &String, inside_arch_wsl: bool) -> i32 {
     let mut current_crf = starting_crf;
     let current_clip_name = format!("output_helper/clips/{}", clip_name);
     let current_clip_encoded_name = format!("output_helper/clips_encoded/{}", clip_name);
@@ -417,6 +423,7 @@ fn find_crf_for_90_ssim2(starting_crf: i32, clip_name: &String, av1an_setings_un
             arch_path,
             ssim2_path,
             &worker_num.to_string(),
+            inside_arch_wsl,
         )
         .unwrap();
         println!("ssim2 Succesfully: {}", &current_clip_name);

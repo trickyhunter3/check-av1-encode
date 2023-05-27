@@ -363,6 +363,7 @@ fn format_encoding_settings(settings: &str, input_file: &String, speed: &str, cr
 
 fn check_and_create_folders_helpers() {
     //delete latest encode
+    fs::create_dir_all("output_helper").unwrap();
     fs::remove_dir_all("output_helper/").unwrap();
     fs::create_dir_all("output_helper/clips").unwrap();
     fs::create_dir_all("output_helper/clips_encoded").unwrap();

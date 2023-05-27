@@ -16,6 +16,7 @@ Options:
   -l, --clip-length <CLIP_LENGTH>      Clip Length in seconds [default: 20]
   -n, --clip-interval <CLIP_INTERVAL>  Clip Interval in seconds [default: 360]
   -u, --crf-option <CRF_OPTION>        select what crf to use on output video (average/smallest) [default: smallest]
+  -a, --inside-arch-wsl                if run inside arch wsl enable this
   -h, --help                           Print help
   -V, --version                        Print version
   ```
@@ -41,6 +42,5 @@ arch wsl with: ssmi2
 av1an, ffmpeg, ffprobe
 
 
-## TODO:
-
-multithreading
+encoding multithreading works
+need to multithread clip creation
